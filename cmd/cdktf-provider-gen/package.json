@@ -1,5 +1,5 @@
 {
-  "name": "{{ .Config.Name }}",
+  "name": "@cdktf/provider-{{ .Config.Name }}",
   "version": "0.0.1",
   "author": "unknown",
   "license": "MIT",
