@@ -69,6 +69,29 @@ Finally, you will have a Go module created at `gen/google`. Once you push your c
 go get github.com/your-org/cdktf-providers/gen/google
 ```
 
+## Troubleshooting
+
+### Broken code generation error from `node`
+
+> [!NOTE]
+> We are reverse engineering how the upstream work, so it's not guaranteed to work all the time, especially when the upstream changes.
+
+Use the `-keep` flag to retain the intermediate assets:
+
+```sh
+export SRC_LOG_LEVEL=debug
+cdktf-provider-gen -config google.yml -keep
+```
+
+Locate the `tmpDir` from output logs, and `cd` into the directory. You will find the `node` project we use to generate provider code from. 
+
+Then, you can manually run relevant commands to debug the issue:
+
+```sh
+npm run compile
+npm run pkg:go
+```
+
 [pre-built providers]: https://developer.hashicorp.com/terraform/cdktf/concepts/providers#install-pre-built-providerss
 [cdktf/cdktf-provider-google]: https://github.com/cdktf/cdktf-provider-google
 [cdktf/cdktf-provider-google-go]: https://github.com/cdktf/cdktf-provider-google-go

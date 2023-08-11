@@ -60,6 +60,7 @@ var gen = &cli.App{
 	Flags: []cli.Flag{
 		configFlag,
 		cdktfVersionFlag,
+		keepFlag,
 	},
 	UsageText: `
 # Generate the googla provider
@@ -165,7 +166,9 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 		if err != nil {
 			return errors.Wrap(err, "create temp dir")
 		}
-		defer os.RemoveAll(tmpDir)
+		if !keepFlag.Get(c) {
+			defer os.RemoveAll(tmpDir)
+		}
 		logger = logger.With(log.String("tmpDir", tmpDir))
 
 		logger.Debug("write package.json")
