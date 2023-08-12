@@ -186,6 +186,7 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 			"npm install --no-save",
 			"npm run fetch",
 			"npm run compile",
+			"rm -rf ./src", // remove the source code dir `./src`, we only need `./lib`, shave off a few extra bytes
 			"npm run pkg:go",
 		} {
 			if err := run.Cmd(cmdCtx, cmd).Dir(tmpDir).Run().Wait(); err != nil {
