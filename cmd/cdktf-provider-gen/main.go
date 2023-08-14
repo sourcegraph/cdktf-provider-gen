@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -21,6 +22,8 @@ import (
 	"github.com/sourcegraph/run"
 	"github.com/sourcegraph/sourcegraph/lib/errors"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 
 	"github.com/sourcegraph/cdktf-provider-gen/internal/observability"
 	"github.com/sourcegraph/cdktf-provider-gen/internal/output"
@@ -71,6 +74,10 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
     `,
 	Action: func(c *cli.Context) error {
 		logger := log.Scoped("gen", "generate cdktf provider code")
+
+		// TODO: add validation
+		cdktfVersion := cdktfVersionFlag.Get(c)
+		logger = logger.With(log.String("cdktf.version", cdktfVersion))
 
 		// workarounad for lack of well supported terraform toolchains for bazel
 		// so we need to bring our own terraform and configure it in the path
@@ -145,11 +152,11 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 			return errors.Wrap(err, "marshal cdktf.json")
 		}
 
-		deps, err := fetchCdktfDependencies(c.Context, cdktfVersionFlag.Get(c))
+		deps, err := fetchCdktfDependencies(c.Context, cdktfVersion)
 		if err != nil {
 			return errors.Wrap(err, "fetch cdktf dependencies")
 		}
-		deps.Cdktf = cdktfVersionFlag.Get(c)
+		deps.Cdktf = cdktfVersion
 
 		data := projectTemplateData{
 			Config:      *config,
@@ -194,13 +201,19 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 			}
 		}
 
+		srcDir := filepath.Join(tmpDir, "dist", "go", config.Target.Go.PackageName)
+		logger = logger.With(log.String("srcDir", srcDir))
+		logger.Debug("pining cdktf go dependencies")
+		if err := pinCdktfGoDependencies(c.Context, cdktfVersion, fmt.Sprintf("%s/go.mod", srcDir)); err != nil {
+			return errors.Wrap(err, "pin cdktf go dependencies")
+		}
+
 		cwd, err := os.Getwd()
 		if err != nil {
 			return errors.Wrap(err, "get working dir")
 		}
-		srcDir := filepath.Join(tmpDir, "dist", "go", config.Target.Go.PackageName)
 		outputDir := filepath.Join(cwd, config.Output, config.Target.Go.PackageName)
-		logger = logger.With(log.String("srcDir", srcDir), log.String("outputDir", outputDir))
+		logger = logger.With(log.String("outputDir", outputDir))
 		logger.Debug("ensuring output dir is clean")
 		if _, err := os.Stat(outputDir); err == nil {
 			if err := os.RemoveAll(outputDir); err != nil {
@@ -267,4 +280,76 @@ func fetchCdktfDependencies(ctx context.Context, version string) (*cdktfDependen
 		return nil, errors.New("constructs version not found")
 	}
 	return deps, nil
+}
+
+var (
+	encodedTerraformCdkGoPkgName = url.PathEscape("github.com/hashicorp/terraform-cdk-go/cdktf")
+)
+
+func fetchCdktfGoDependencies(ctx context.Context, version string) (map[string]string, error) {
+	// pkg.go.dev has no public API that can provide such information
+	// https://github.com/golang/go/issues/36785
+	depsAPIURL := fmt.Sprintf("https://api.deps.dev/v3alpha/systems/go/packages/%s/versions/v%s:dependencies", encodedTerraformCdkGoPkgName, version)
+
+	response, err := http.Get(depsAPIURL)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetch cdktf go dependencies")
+	}
+	defer response.Body.Close()
+
+	var resp struct {
+		Nodes []struct {
+			VersionKey struct {
+				System  string `json:"system"`
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"versionKey"`
+			Relation string `json:"relation"`
+		} `json:"nodes"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&resp); err != nil {
+		return nil, errors.Wrap(err, "decode response")
+	}
+
+	m := make(map[string]string)
+	for _, n := range resp.Nodes {
+		switch n.Relation {
+		case "SELF", "DIRECT":
+			m[n.VersionKey.Name] = n.VersionKey.Version
+		}
+	}
+	return m, nil
+}
+
+func pinCdktfGoDependencies(ctx context.Context, version string, path string) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return errors.Wrap(err, "read go.mod file")
+	}
+	modFile, err := modfile.Parse("go.mod", b, nil)
+
+	deps, err := fetchCdktfGoDependencies(ctx, version)
+	if err != nil {
+		return errors.Wrap(err, "fetch cdktf go dependencies")
+	}
+
+	var requires []*modfile.Require
+	for n, v := range deps {
+		requires = append(requires, &modfile.Require{
+			Mod: module.Version{
+				Path:    n,
+				Version: v,
+			},
+		})
+	}
+	modFile.SetRequire(requires)
+
+	out, err := modFile.Format()
+	if err != nil {
+		return errors.Wrap(err, "format go.mod file")
+	}
+	if err := os.WriteFile(path, out, 0644); err != nil {
+		return errors.Wrap(err, "write go.mod file")
+	}
+	return nil
 }
