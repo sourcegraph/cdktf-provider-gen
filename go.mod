@@ -14,6 +14,7 @@ require (
 	github.com/urfave/cli/v2 v2.25.7
 	go.opentelemetry.io/otel v1.16.0
 	go.opentelemetry.io/otel/sdk v1.16.0
+	golang.org/x/mod v0.10.0
 	sigs.k8s.io/yaml v1.3.0
 )
 
@@ -80,7 +81,6 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.8.0 // indirect
-	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/net v0.9.0 // indirect
 	golang.org/x/sys v0.8.0 // indirect
 	golang.org/x/term v0.7.0 // indirect
