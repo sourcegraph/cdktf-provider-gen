@@ -73,7 +73,7 @@ cdktf-provider-gen -concifg google.yaml
 cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
     `,
 	Action: func(c *cli.Context) error {
-		logger := log.Scoped("gen", "generate cdktf provider code")
+		logger := log.Scoped("gen")
 
 		// TODO: add validation
 		cdktfVersion := cdktfVersionFlag.Get(c)
