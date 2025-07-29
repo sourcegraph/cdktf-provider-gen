@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -282,43 +281,51 @@ func fetchCdktfDependencies(ctx context.Context, version string) (*cdktfDependen
 	return deps, nil
 }
 
-var (
-	encodedTerraformCdkGoPkgName = url.PathEscape("github.com/hashicorp/terraform-cdk-go/cdktf")
-)
-
 func fetchCdktfGoDependencies(ctx context.Context, version string) (map[string]string, error) {
 	// pkg.go.dev has no public API that can provide such information
 	// https://github.com/golang/go/issues/36785
-	depsAPIURL := fmt.Sprintf("https://api.deps.dev/v3alpha/systems/go/packages/%s/versions/v%s:dependencies", encodedTerraformCdkGoPkgName, version)
+	//
+	// https://api.deps.dev/v3alpha/systems/go/packages/%s/versions/v%s:dependencies
+	// also removed the go dep graph endpoint
+	// https://github.com/google/deps.dev/issues/265
+	//
+	// hence, we have to parse the information ourself, and we only care about direct deps.
+	goModURL := fmt.Sprintf(
+		"https://raw.githubusercontent.com/hashicorp/terraform-cdk-go/refs/tags/cdktf/v%s/cdktf/go.mod", version)
 
-	response, err := http.Get(depsAPIURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, goModURL, nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetch cdktf go dependencies")
+		return nil, errors.Wrap(err, "create request to fetch hashicorp/terraform-cdk-go/cdktf go.mod")
+	}
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetch hashicorp/terraform-cdk-go/cdktf go.mod")
 	}
 	defer response.Body.Close()
-
-	var resp struct {
-		Nodes []struct {
-			VersionKey struct {
-				System  string `json:"system"`
-				Name    string `json:"name"`
-				Version string `json:"version"`
-			} `json:"versionKey"`
-			Relation string `json:"relation"`
-		} `json:"nodes"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&resp); err != nil {
-		return nil, errors.Wrap(err, "decode response")
+	if response.StatusCode != http.StatusOK {
+		return nil, errors.Newf("fetch hashicorp/terraform-cdk-go/cdktf go.mod failed with status code %d", response.StatusCode)
 	}
 
-	m := make(map[string]string)
-	for _, n := range resp.Nodes {
-		switch n.Relation {
-		case "SELF", "DIRECT":
-			m[n.VersionKey.Name] = n.VersionKey.Version
+	var buf bytes.Buffer
+	_, err = buf.ReadFrom(response.Body)
+	if err != nil {
+		return nil, errors.Wrap(err, "read hashicorp/terraform-cdk-go/cdktf pkg go.mod content")
+	}
+	modFile, err := modfile.Parse("go.mod", buf.Bytes(), nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse go.mod")
+	}
+
+	deps := make(map[string]string)
+	if modFile.Module != nil {
+		deps[modFile.Module.Mod.Path] = "v" + version
+	}
+	for _, require := range modFile.Require {
+		if !require.Indirect {
+			deps[require.Mod.Path] = require.Mod.Version
 		}
 	}
-	return m, nil
+	return deps, nil
 }
 
 func pinCdktfGoDependencies(ctx context.Context, version string, path string) error {
@@ -327,6 +334,9 @@ func pinCdktfGoDependencies(ctx context.Context, version string, path string) er
 		return errors.Wrap(err, "read go.mod file")
 	}
 	modFile, err := modfile.Parse("go.mod", b, nil)
+	if err != nil {
+		return errors.Wrap(err, "parse go.mod file")
+	}
 
 	deps, err := fetchCdktfGoDependencies(ctx, version)
 	if err != nil {
