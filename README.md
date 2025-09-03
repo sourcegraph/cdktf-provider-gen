@@ -16,6 +16,12 @@ This command lacks the ability to cache the generated constructs and you have to
 
 In Go, it does not provide an easy way to make individual provider a separate Go module. This is problematic when you would like to avoid comitting generated codes to your main repository and host them in a separate centralized Git repository for ease of consumption. Then, you would have to make each provider a separate module because providers such as `google` and `aws` are too big and exceed the limit of Go modules proxy.
 
+Additionally, the upstream generator suffers from the problem of packaging duplicated [jsii modules](https://www.npmjs.com/package/jsii-pacmak) in the Go packages under the same CDKTF project. For example, a CDKTF project includes `aws` and `google` providers. The generated `aws` Go package will contain the jsii modules for both `aws` and `google` provider. It has the following problems:
+
+- Bloated binary. The produced Go binary includes duplicate (`N^2` where `N` is the number of providers in the CDKTF project) jsii modules.
+- Slow compliation time.
+- Slow startup time. The Go program needs to load all the jsii modules during `init` time.
+
 It's not really sustainable to replicate Hashicorp's own infra to publish every [pre-build providers] using [cdktf/cdktf-provider-project] when we just want something simple.
 
 Therefore, we reverse engineer how [cdktf/cdktf-provider-google] generates the standalone Go module [cdktf/cdktf-provider-google-go] and created this project for our use case.
