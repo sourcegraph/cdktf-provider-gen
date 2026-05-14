@@ -49,6 +49,10 @@ var (
 	packageJSONTemplate       = template.Must(template.New("").Parse(packageJSONTemplateString))
 )
 
+const (
+	defaultNodeOptions = "--max-old-space-size=8192"
+)
+
 type projectTemplateData struct {
 	Config      generator.Config
 	PackageName string
@@ -97,6 +101,21 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 		}
 		_ = os.Setenv("PATH", tfInstallDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
+		// Resolve node's real bin directory from the parent process's cwd and
+		// prepend it to PATH so subprocesses use the same node/npm regardless of
+		// the subprocess cwd. Shim-based version managers (asdf, etc.) resolve
+		// node based on the cwd's .tool-versions, so without this the subprocess
+		// running in tmpDir would fall back to a different node than the parent.
+		nodeEnv, err := resolveNodeEnv(c.Context)
+		if err != nil {
+			return errors.Wrap(err, "resolve node env")
+		}
+		logger = logger.With(
+			log.String("node.binDir", nodeEnv.binDir),
+			log.String("node.version", nodeEnv.version),
+		)
+		_ = os.Setenv("PATH", nodeEnv.binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
 		b, err := os.ReadFile(configFlag.Get(c))
 		if err != nil {
 			return errors.Wrap(err, "read config file")
@@ -109,8 +128,8 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 		logger = logger.With(log.String("name", config.Name))
 		if config.Provider != nil {
 			logger = logger.With(
-				log.String("name", config.Name),
 				log.String("provider.name", config.Provider.Name),
+				log.String("provider.source", config.Provider.Source),
 				log.String("provider.version", config.Provider.Version),
 			)
 		}
@@ -195,7 +214,11 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 			"rm -rf ./src", // remove the source code dir `./src`, we only need `./lib`, shave off a few extra bytes
 			"npm run pkg:go",
 		} {
-			if err := run.Cmd(cmdCtx, cmd).Dir(tmpDir).Run().Wait(); err != nil {
+			runner := run.Cmd(cmdCtx, cmd).Dir(tmpDir).Environ(os.Environ())
+			if os.Getenv("NODE_OPTIONS") == "" {
+				runner = runner.Env(map[string]string{"NODE_OPTIONS": defaultNodeOptions})
+			}
+			if err := runner.Run().Wait(); err != nil {
 				return errors.Wrapf(err, "run: %q", cmd)
 			}
 		}
@@ -229,6 +252,35 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 
 		return nil
 	},
+}
+
+type nodeEnv struct {
+	binDir  string
+	version string
+}
+
+// resolveNodeEnv asks node where its real binary lives (process.execPath) and
+// reports its version. Using process.execPath works for any install layout
+// (asdf/nvm/fnm/volta/brew/system) because node reports its own absolute path
+// even when invoked via a version-manager shim. npm is colocated with node in
+// all common layouts.
+func resolveNodeEnv(ctx context.Context) (nodeEnv, error) {
+	out, err := run.Cmd(ctx, "node", "-e", "process.stdout.write(process.execPath)").Run().String()
+	if err != nil {
+		return nodeEnv{}, errors.Wrap(err, "exec node to resolve execPath")
+	}
+	execPath := strings.TrimSpace(out)
+	if execPath == "" {
+		return nodeEnv{}, errors.New("node returned empty execPath")
+	}
+	version, err := run.Cmd(ctx, execPath, "--version").Run().String()
+	if err != nil {
+		return nodeEnv{}, errors.Wrap(err, "get node version")
+	}
+	return nodeEnv{
+		binDir:  filepath.Dir(execPath),
+		version: strings.TrimSpace(version),
+	}, nil
 }
 
 func Last[E any](s []E) (E, bool) {

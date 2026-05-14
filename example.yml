@@ -1,0 +1,11 @@
+name: tls
+
+provider:
+  source: registry.terraform.io/hashicorp/tls
+  version: "4.0.4"
+
+target:
+  language: go
+  moduleName: github.com/sourcegraph/controller-cdktf/gen
+
+output: gen
