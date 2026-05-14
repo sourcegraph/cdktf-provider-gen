@@ -7,8 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sourcegraph/sourcegraph/lib/errors"
-	liboutput "github.com/sourcegraph/sourcegraph/lib/output"
+	"github.com/pkg/errors"
 )
 
 type Format string
@@ -16,8 +15,7 @@ type Format string
 const (
 	// FormatJSON renders plain, unformatted JSON.
 	FormatJSON Format = "json"
-	// FormatPretty renders pretty, human-readable content, by default indented,
-	// color-coded JSON.
+	// FormatPretty renders pretty, human-readable content, by default indented JSON.
 	FormatPretty Format = "pretty"
 	// FormatText renders plain-text content, by default the '%v' directive formatting.
 	FormatText Format = "text"
@@ -71,8 +69,8 @@ func Render(format Format, v any) error {
 		if err != nil {
 			return err
 		}
-		return liboutput.NewOutput(os.Stdout, liboutput.OutputOpts{}).
-			WriteCode("json", string(data))
+		_, err = fmt.Println(string(data))
+		return err
 	case FormatText:
 		data := strings.TrimSpace(fmt.Sprintf("%v", v))
 		_, err := fmt.Println(data)
@@ -80,6 +78,6 @@ func Render(format Format, v any) error {
 	case FormatNone:
 		return nil
 	default:
-		return fmt.Errorf("unknown format %q", format)
+		return errors.Errorf("unknown format %q", format)
 	}
 }

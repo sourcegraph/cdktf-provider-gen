@@ -17,9 +17,9 @@ import (
 	hcproduct "github.com/hashicorp/hc-install/product"
 	tfreleases "github.com/hashicorp/hc-install/releases"
 	cp "github.com/otiai10/copy"
+	"github.com/pkg/errors"
 	"github.com/sourcegraph/log"
 	"github.com/sourcegraph/run"
-	"github.com/sourcegraph/sourcegraph/lib/errors"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
@@ -150,7 +150,7 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 			// this is a special handling for provider name with hyphens
 			providerName, ok := Last(strings.Split(config.Provider.Source, "/"))
 			if !ok {
-				return errors.Newf("provider name not found: %q", config.Provider.Source)
+				return errors.Errorf("provider name not found: %q", config.Provider.Source)
 			}
 			config.Provider.Name = providerName
 			m.TerraformProviders = []cdktf.Source{
@@ -355,7 +355,7 @@ func fetchCdktfGoDependencies(ctx context.Context, version string) (map[string]s
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, errors.Newf("fetch hashicorp/terraform-cdk-go/cdktf go.mod failed with status code %d", response.StatusCode)
+		return nil, errors.Errorf("fetch hashicorp/terraform-cdk-go/cdktf go.mod failed with status code %d", response.StatusCode)
 	}
 
 	var buf bytes.Buffer
