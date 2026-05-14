@@ -20,4 +20,4 @@ You can find the directory from logs. Remember to delete the directory after ins
 
 - Use `github.com/sourcegraph/run` for running external commands.
 - Use `github.com/sourcegraph/log` for logging.
-- Use `github.com/sourcegraph/sourcegraph/lib/errors` for error handling.
+- Use `github.com/pkg/errors` for error handling.

@@ -3,8 +3,8 @@ package generator
 import (
 	"encoding/json"
 
+	"github.com/pkg/errors"
 	"github.com/sourcegraph/cdktf-provider-gen/pkg/cdktf"
-	"github.com/sourcegraph/sourcegraph/lib/errors"
 	"sigs.k8s.io/yaml"
 )
 
@@ -71,7 +71,7 @@ func (t *Target) UnmarshalJSON(b []byte) error {
 	case "go":
 		return json.Unmarshal(b, &t.Go)
 	}
-	return errors.Newf("unknown target language %q", d.Language)
+	return errors.Errorf("unknown target language %q", d.Language)
 }
 
 func (t Target) MarshalJSON() ([]byte, error) {
