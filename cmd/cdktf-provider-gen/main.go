@@ -106,17 +106,15 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 		// the subprocess cwd. Shim-based version managers (asdf, etc.) resolve
 		// node based on the cwd's .tool-versions, so without this the subprocess
 		// running in tmpDir would fall back to a different node than the parent.
-		nodeBinDir, err := resolveNodeBinDir(c.Context)
+		nodeEnv, err := resolveNodeEnv(c.Context)
 		if err != nil {
-			return errors.Wrap(err, "resolve node bin dir")
+			return errors.Wrap(err, "resolve node env")
 		}
-		logger = logger.With(log.String("node.binDir", nodeBinDir))
-		_ = os.Setenv("PATH", nodeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-		nodeVersion, err := run.Cmd(c.Context, "node", "--version").Run().String()
-		if err != nil {
-			return errors.Wrap(err, "get node version")
-		}
-		logger = logger.With(log.String("node.version", strings.TrimSpace(nodeVersion)))
+		logger = logger.With(
+			log.String("node.binDir", nodeEnv.binDir),
+			log.String("node.version", nodeEnv.version),
+		)
+		_ = os.Setenv("PATH", nodeEnv.binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 		b, err := os.ReadFile(configFlag.Get(c))
 		if err != nil {
@@ -256,21 +254,33 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 	},
 }
 
-// resolveNodeBinDir asks node where its real binary lives (process.execPath)
-// and returns the containing directory. This works for any install layout
+type nodeEnv struct {
+	binDir  string
+	version string
+}
+
+// resolveNodeEnv asks node where its real binary lives (process.execPath) and
+// reports its version. Using process.execPath works for any install layout
 // (asdf/nvm/fnm/volta/brew/system) because node reports its own absolute path
 // even when invoked via a version-manager shim. npm is colocated with node in
 // all common layouts.
-func resolveNodeBinDir(ctx context.Context) (string, error) {
+func resolveNodeEnv(ctx context.Context) (nodeEnv, error) {
 	out, err := run.Cmd(ctx, "node", "-e", "process.stdout.write(process.execPath)").Run().String()
 	if err != nil {
-		return "", errors.Wrap(err, "exec node to resolve execPath")
+		return nodeEnv{}, errors.Wrap(err, "exec node to resolve execPath")
 	}
 	execPath := strings.TrimSpace(out)
 	if execPath == "" {
-		return "", errors.New("node returned empty execPath")
+		return nodeEnv{}, errors.New("node returned empty execPath")
 	}
-	return filepath.Dir(execPath), nil
+	version, err := run.Cmd(ctx, execPath, "--version").Run().String()
+	if err != nil {
+		return nodeEnv{}, errors.Wrap(err, "get node version")
+	}
+	return nodeEnv{
+		binDir:  filepath.Dir(execPath),
+		version: strings.TrimSpace(version),
+	}, nil
 }
 
 func Last[E any](s []E) (E, bool) {
