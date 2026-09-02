@@ -10,11 +10,11 @@ var (
 		Aliases:  []string{"c"},
 		Required: true,
 	}
-	cdktfVersionFlag = &cli.StringFlag{
-		Name:    "cdktf-version",
-		Usage:   "The target cdktf version to use",
-		Value:   "0.16.3",
-		EnvVars: []string{"CDKTF_VERSION"},
+	cdktnVersionFlag = &cli.StringFlag{
+		Name:    "cdktn-version",
+		Usage:   "The target CDK-Terrain version to use",
+		Value:   "0.24.0",
+		EnvVars: []string{"CDKTN_VERSION"},
 	}
 	keepFlag = &cli.BoolFlag{
 		Name:  "keep",

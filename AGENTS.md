@@ -5,13 +5,13 @@
 To verify the code compiles and the tests pass, run:
 
 ```bash
-go run ./cmd/cdktf-provider-gen/ -c ./example.yml -cdktf-version 0.20.7 
+go run ./cmd/cdktf-provider-gen/ -c ./example.yml -cdktn-version 0.24.0
 ```
 
 You can use `-keep` flag to keep the generated code for furthur inspection:
 
 ```bash
-SRC_LOG_LEVEL=debug go run ./cmd/cdktf-provider-gen/ -c ./example.yml -cdktf-version 0.20.7 -keep
+SRC_LOG_LEVEL=debug go run ./cmd/cdktf-provider-gen/ -c ./example.yml -cdktn-version 0.24.0 -keep
 ```
 
 You can find the directory from logs. Remember to delete the directory after inspection to save disk space.

@@ -50,7 +50,7 @@ var (
 )
 
 const (
-	defaultNodeOptions = "--max-old-space-size=8192"
+	defaultNodeOptions = "--max-old-space-size=16384"
 )
 
 type projectTemplateData struct {
@@ -58,33 +58,33 @@ type projectTemplateData struct {
 	PackageName string
 	ModuleName  string
 
-	Deps cdktfDependencies
+	Deps cdktnDependencies
 }
 
 var gen = &cli.App{
 	Name: "cdktf-provider-gen",
 	Flags: []cli.Flag{
 		configFlag,
-		cdktfVersionFlag,
+		cdktnVersionFlag,
 		keepFlag,
 	},
 	UsageText: `
-# Generate the googla provider
-cdktf-provider-gen -concifg google.yaml
+# Generate the Google provider
+cdktf-provider-gen -config google.yaml
 
-# Use a specific version of cdktf
-cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
+# Use a specific version of CDK-Terrain
+cdktf-provider-gen -config google.yaml -cdktn-version 0.24.0
     `,
 	Action: func(c *cli.Context) error {
 		logger := log.Scoped("gen")
 
 		// TODO: add validation
-		cdktfVersion := cdktfVersionFlag.Get(c)
-		logger = logger.With(log.String("cdktf.version", cdktfVersion))
+		cdktnVersion := cdktnVersionFlag.Get(c)
+		logger = logger.With(log.String("cdktn.version", cdktnVersion))
 
-		// workarounad for lack of well supported terraform toolchains for bazel
+		// Workaround for lack of well-supported Terraform toolchains for Bazel:
 		// so we need to bring our own terraform and configure it in the path
-		// so the cdktf-cli npm package can access it
+		// so the cdktn-cli npm package can access it.
 		tfInstallDir, err := os.MkdirTemp("", "tf-bin")
 		if err != nil {
 			return errors.Wrap(err, "create temp tf-bin dir")
@@ -170,11 +170,11 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 			return errors.Wrap(err, "marshal cdktf.json")
 		}
 
-		deps, err := fetchCdktfDependencies(c.Context, cdktfVersion)
+		deps, err := fetchCdktnDependencies(c.Context, cdktnVersion)
 		if err != nil {
-			return errors.Wrap(err, "fetch cdktf dependencies")
+			return errors.Wrap(err, "fetch CDK-Terrain dependencies")
 		}
-		deps.Cdktf = cdktfVersion
+		deps.Cdktn = cdktnVersion
 
 		data := projectTemplateData{
 			Config:      *config,
@@ -205,7 +205,7 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 			return errors.Wrap(err, "write cdktf.json")
 		}
 
-		logger.Debug("compiling cdktf provider code")
+		logger.Debug("compiling CDK-Terrain provider code")
 		cmdCtx := observability.LogCommands(c.Context, logger)
 		for _, cmd := range []string{
 			"npm install --no-save",
@@ -215,9 +215,11 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 			"npm run pkg:go",
 		} {
 			runner := run.Cmd(cmdCtx, cmd).Dir(tmpDir).Environ(os.Environ())
+			env := map[string]string{"GOWORK": "off"}
 			if os.Getenv("NODE_OPTIONS") == "" {
-				runner = runner.Env(map[string]string{"NODE_OPTIONS": defaultNodeOptions})
+				env["NODE_OPTIONS"] = defaultNodeOptions
 			}
+			runner = runner.Env(env)
 			if err := runner.Run().Wait(); err != nil {
 				return errors.Wrapf(err, "run: %q", cmd)
 			}
@@ -225,9 +227,9 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 
 		srcDir := filepath.Join(tmpDir, "dist", "go", config.Target.Go.PackageName)
 		logger = logger.With(log.String("srcDir", srcDir))
-		logger.Debug("pining cdktf go dependencies")
-		if err := pinCdktfGoDependencies(c.Context, cdktfVersion, fmt.Sprintf("%s/go.mod", srcDir)); err != nil {
-			return errors.Wrap(err, "pin cdktf go dependencies")
+		logger.Debug("pinning CDK-Terrain Go dependencies")
+		if err := pinCdktnGoDependencies(c.Context, cdktnVersion, fmt.Sprintf("%s/go.mod", srcDir)); err != nil {
+			return errors.Wrap(err, "pin CDK-Terrain Go dependencies")
 		}
 
 		cwd, err := os.Getwd()
@@ -247,7 +249,7 @@ cdktf-provider-gen -config google.yaml -cdktf-version 0.17.3
 		}
 		logger.Debug("copying to output dir")
 		if err := cp.Copy(srcDir, outputDir); err != nil {
-			return errors.Wrap(err, "copy cdktf.out")
+			return errors.Wrap(err, "copy generated Go module")
 		}
 
 		return nil
@@ -291,30 +293,37 @@ func Last[E any](s []E) (E, bool) {
 	return s[len(s)-1], true
 }
 
-type cdktfDependencies struct {
+type cdktnDependencies struct {
 	Jsii       string
 	JsiiPacmak string
 	Constructs string
-	Cdktf      string
+	Cdktn      string
 }
 
-func fetchCdktfDependencies(ctx context.Context, version string) (*cdktfDependencies, error) {
-	npmAPIURL := fmt.Sprintf("https://registry.npmjs.org/cdktf/%s", version)
+func fetchCdktnDependencies(ctx context.Context, version string) (*cdktnDependencies, error) {
+	npmAPIURL := fmt.Sprintf("https://registry.npmjs.org/cdktn/%s", version)
 
-	response, err := http.Get(npmAPIURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, npmAPIURL, nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetch cdktf version from registry")
+		return nil, errors.Wrap(err, "create request to fetch CDK-Terrain version from registry")
+	}
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetch CDK-Terrain version from registry")
 	}
 	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, errors.Errorf("fetch CDK-Terrain version from registry failed with status code %d", response.StatusCode)
+	}
 
 	var resp struct {
 		DevDependencies map[string]string `json:"devDependencies"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&resp); err != nil {
-		return nil, errors.Wrap(err, "decode cdktf version response")
+		return nil, errors.Wrap(err, "decode CDK-Terrain version response")
 	}
 
-	deps := &cdktfDependencies{}
+	deps := &cdktnDependencies{}
 	if v, ok := resp.DevDependencies["jsii"]; ok {
 		deps.Jsii = v
 	} else {
@@ -333,7 +342,7 @@ func fetchCdktfDependencies(ctx context.Context, version string) (*cdktfDependen
 	return deps, nil
 }
 
-func fetchCdktfGoDependencies(ctx context.Context, version string) (map[string]string, error) {
+func fetchCdktnGoDependencies(ctx context.Context, version string) (map[string]string, error) {
 	// pkg.go.dev has no public API that can provide such information
 	// https://github.com/golang/go/issues/36785
 	//
@@ -343,25 +352,25 @@ func fetchCdktfGoDependencies(ctx context.Context, version string) (map[string]s
 	//
 	// hence, we have to parse the information ourself, and we only care about direct deps.
 	goModURL := fmt.Sprintf(
-		"https://raw.githubusercontent.com/hashicorp/terraform-cdk-go/refs/tags/cdktf/v%s/cdktf/go.mod", version)
+		"https://raw.githubusercontent.com/open-constructs/cdk-terrain-go/refs/tags/cdktn/v%s/cdktn/go.mod", version)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, goModURL, nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "create request to fetch hashicorp/terraform-cdk-go/cdktf go.mod")
+		return nil, errors.Wrap(err, "create request to fetch open-constructs/cdk-terrain-go/cdktn go.mod")
 	}
 	response, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetch hashicorp/terraform-cdk-go/cdktf go.mod")
+		return nil, errors.Wrap(err, "fetch open-constructs/cdk-terrain-go/cdktn go.mod")
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("fetch hashicorp/terraform-cdk-go/cdktf go.mod failed with status code %d", response.StatusCode)
+		return nil, errors.Errorf("fetch open-constructs/cdk-terrain-go/cdktn go.mod failed with status code %d", response.StatusCode)
 	}
 
 	var buf bytes.Buffer
 	_, err = buf.ReadFrom(response.Body)
 	if err != nil {
-		return nil, errors.Wrap(err, "read hashicorp/terraform-cdk-go/cdktf pkg go.mod content")
+		return nil, errors.Wrap(err, "read open-constructs/cdk-terrain-go/cdktn go.mod content")
 	}
 	modFile, err := modfile.Parse("go.mod", buf.Bytes(), nil)
 	if err != nil {
@@ -380,7 +389,7 @@ func fetchCdktfGoDependencies(ctx context.Context, version string) (map[string]s
 	return deps, nil
 }
 
-func pinCdktfGoDependencies(ctx context.Context, version string, path string) error {
+func pinCdktnGoDependencies(ctx context.Context, version string, path string) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return errors.Wrap(err, "read go.mod file")
@@ -390,9 +399,9 @@ func pinCdktfGoDependencies(ctx context.Context, version string, path string) er
 		return errors.Wrap(err, "parse go.mod file")
 	}
 
-	deps, err := fetchCdktfGoDependencies(ctx, version)
+	deps, err := fetchCdktnGoDependencies(ctx, version)
 	if err != nil {
-		return errors.Wrap(err, "fetch cdktf go dependencies")
+		return errors.Wrap(err, "fetch CDK-Terrain Go dependencies")
 	}
 
 	var requires []*modfile.Require
