@@ -1,5 +1,5 @@
 {
-  "name": "@cdktf/provider-{{ .Config.Name }}",
+  "name": "@cdktn/provider-{{ .Config.Name }}",
   "version": "0.0.1",
   "author": "unknown",
   "license": "MIT",
@@ -10,23 +10,23 @@
     "url": "https://github.com/sourcegraph/cdktf-provider-gen"
   },
   "devDependencies": {
-    "@cdktf/provider-generator": "{{ .Deps.Cdktf }}",
-    "cdktf": "{{ .Deps.Cdktf }}",
-    "cdktf-cli": "{{ .Deps.Cdktf }}",
+    "@cdktn/provider-generator": "{{ .Deps.Cdktn }}",
+    "cdktn": "{{ .Deps.Cdktn }}",
+    "cdktn-cli": "{{ .Deps.Cdktn }}",
     "jsii": "{{ .Deps.Jsii }}",
     "jsii-pacmak": "{{ .Deps.JsiiPacmak }}",
     "constructs": "{{ .Deps.Constructs }}"
   },
   "peerDependencies": {
-    "cdktf": "{{ .Deps.Cdktf }}",
+    "cdktn": "{{ .Deps.Cdktn }}",
     "constructs": "{{ .Deps.Constructs }}"
   },
   "scripts": {
     {{- if .Config.Provider }}
-    "fetch": "mkdir -p src && rm -rf ./src/* && cdktf get && cp -R .gen/providers/{{ .Config.Provider.Name }}/* ./src/ && cp .gen/versions.json ./src/version.json",
+    "fetch": "mkdir -p src && rm -rf ./src/* && cdktn get && cp -R .gen/providers/{{ .Config.Provider.Name }}/* ./src/ && cp .gen/versions.json ./src/version.json",
     {{- end }}
     {{- if .Config.Module }}
-    "fetch": "mkdir -p src && rm -rf ./src/* && cdktf get && cp .gen/modules/{{ .Config.Name }}.ts ./src/index.ts && cp .gen/versions.json ./src/version.json",
+    "fetch": "mkdir -p src && rm -rf ./src/* && cdktn get && cp .gen/modules/{{ .Config.Name }}.ts ./src/index.ts && cp .gen/versions.json ./src/version.json",
     {{- end }}
     "compile": "jsii --silence-warnings=reserved-word",
     "pkg:go": "jsii-pacmak -v --target go"
